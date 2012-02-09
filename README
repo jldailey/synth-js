@@ -36,3 +36,6 @@ In a browser:
 	document.body.appendChild(fragment);
 </script>
 
+
+TODO / Future Work:
+ * It should follow the same indentation rules as python, so that it can support spaces or tabs as long as you are consistent.
