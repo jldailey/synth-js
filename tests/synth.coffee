@@ -1,13 +1,10 @@
 require("./common")
-
-Synth = require("../synth").Synth
+synth = require("../synth").synth
 
 testPattern = (patt, expected) ->
 	() ->
-		m = new Synth()
-		m.debug = 0
 		try
-			output = m.run(patt).toString()
+			output = synth(patt).toString()
 		catch e
 			output = e.toString()
 		assertEqual(output, expected)

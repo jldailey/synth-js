@@ -1,0 +1,38 @@
+Synth
+-----
+
+Generate HTML from minimal expressions.
+
+These expressions look like CSS selectors, are multi-line,
+and tab-delimited. Any arrangment of \r\n is considered a newline,
+while only \t is considered to be an indent.
+
+Example:
+
+html
+	head
+		meta[charset=utf-8]
+		title "Home Page"
+	body
+		div.container#main
+			p "Hello World"
+
+Notice the parts that are not like CSS selectors: the strict
+indentation, and the "quoted" text (which creates text nodes in the
+output).
+
+
+How To Use:
+
+In NodeJS:
+	synth = require("synth-js/synth").synth
+	fragment = synth('a[href=/home] "Click here to win"')
+
+In a browser:
+
+<script src=".../synth.js"></script>
+<script>
+	var fragment = synth("a[href=/home] 'Home Page'");
+	document.body.appendChild(fragment);
+</script>
+

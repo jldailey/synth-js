@@ -370,6 +370,11 @@ class Synth extends StateMachine
 	getOutput: () ->
 		return @root
 
-if exports?
-	exports.Synth = Synth
+synth = (text, debug = 0) ->
+		m = new Synth()
+		m.debug = debug
+		return m.run(text)
+
+exports?.synth = synth
+window?.synth = synth
 
