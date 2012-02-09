@@ -4,7 +4,7 @@ Synth
 Generate HTML from minimal expressions.
 
 These expressions look like CSS selectors, are multi-line,
-and tab-delimited. Any arrangment of \r\n is considered a newline,
+and tab-indented. Any arrangment of \r\n is considered a newline,
 while only \t is considered to be an indent.
 
 Example:
