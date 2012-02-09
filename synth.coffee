@@ -1,12 +1,9 @@
-if not document?
-	document = require("./domjs/dom").createDocument()
 
 Function.ApplyAll = (f, c, a) ->
 	x = f?.apply c, a
 	if typeof x is "function"
 		return Function.ApplyAll x, c, a
 	return x
-
 
 class StateMachine
 	constructor: () -> @reset()
@@ -15,6 +12,10 @@ class StateMachine
 		@state = 0
 		@entered = false
 		@stack = []
+		if document?
+			@document = document
+		else
+			@document = require("domjs/dom").createDocument()
 	jmp: (state) ->
 		() =>
 			console.log "jmp'ing to #{state}" if @debug > 1
@@ -63,17 +64,7 @@ class StateMachine
 		@eval(input)
 		@getOutput()
 
-class EchoMachine extends StateMachine
-	constructor: () ->
-		super()
-		@table = [
-			{
-				every: @push()
-			}
-		]
-# console.log "echo: #{new EchoMachine().run("echo")}"
-
-class SynthMachine extends StateMachine
+class Synth extends StateMachine
 	### Parse CSS-like statements and generate HTML.
 	Basic syntax starts by defining nodes as you would in CSS:
 	tag.class#id[attribute=value]
@@ -122,7 +113,7 @@ class SynthMachine extends StateMachine
 				console.log "ending tag: #{tagName} next: #{next}" if @debug > 0
 				@stack = []
 				if tagName?.length > 0
-					node = document.createElement(tagName)
+					node = @document.createElement(tagName)
 					if @cursor?
 						if @dtabs isnt 1
 							# close (-dtabs + 1) nodes
@@ -143,7 +134,7 @@ class SynthMachine extends StateMachine
 				console.log "ending comment: #{commentBody} next: #{next}" if @debug > 0
 				@stack = []
 				if commentBody?.length > 0
-					node = document.createComment(commentBody)
+					node = @document.createComment(commentBody)
 					@cursor?.appendChild node
 				@jmp next
 
@@ -154,7 +145,7 @@ class SynthMachine extends StateMachine
 				@stack = []
 				if condition?.length > 0
 					#TODO: how to compute the body most correctly!??
-					node = document.createComment("[if " + condition + "]>" + body + "<![endif]")
+					node = @document.createComment("[if " + condition + "]>" + body + "<![endif]")
 				@jmp next
 
 		endClass = (next) =>
@@ -205,7 +196,7 @@ class SynthMachine extends StateMachine
 			() =>
 				text = @stack.join('')
 				@stack = []
-				node = document.createTextNode(text)
+				node = @document.createTextNode(text)
 				@cursor?.appendChild node
 				@jmp next
 
@@ -225,6 +216,7 @@ class SynthMachine extends StateMachine
 		START_COMMENT = "START_COMMENT"
 		CONT_COMMENT = "CONT_COMMENT"
 		READ_COMMENT = "READ_COMMENT"
+		READ_CONDITION = "READ_CONDITION"
 		COUNT_TABS = "COUNT_TABS"
 		START_TABS = "START_TABS"
 		READ_CLASS = "READ_CLASS"
@@ -239,7 +231,7 @@ class SynthMachine extends StateMachine
 					@tabs = 0
 					@dtabs = 1
 					@ptabs = -1
-					@root = document.createDocumentFragment()
+					@root = @document.createDocumentFragment()
 					@cursor = @root
 					@attr = { key: null, val: undefined }
 					@jmp READ_TAG
@@ -378,92 +370,6 @@ class SynthMachine extends StateMachine
 	getOutput: () ->
 		return @root
 
+if exports?
+	exports.Synth = Synth
 
-test = (patt, expected) ->
-	m = new SynthMachine()
-	m.debug = 0
-	try
-		output = m.run(patt).toString()
-	catch e
-		output = e.toString()
-	if output != expected
-		console.log "'#{output}' != '#{expected}'\n"
-		m = new SynthMachine()
-		m.debug = 1
-		m.run(patt)
-	else
-		console.log "PASS: " + output
-
-test("p", "<p/>")
-test("p h", "<p><h/></p>")
-test("""
-s
-	p
-""","<s><p/></s>")
-test("""
-a
-	b
-		c
-""", "<a><b><c/></b></a>")
-test("""
-a
-	b
-	c
-""", "<a><b/><c/></a>")
-test("""
-a
-	b
-		c
-	d
-""", "<a><b><c/></b><d/></a>")
-
-test("a.b", '<a class="b"/>')
-test("""
-a.b
-	b.c
-""", '<a class="b"><b class="c"/></a>')
-test("""
-foo.bar
-	goo.baz
-		hoo.bap
-		a
-""", '<foo class="bar"><goo class="baz"><hoo class="bap"/><a/></goo></foo>')
-
-test("foo.bar#baz", '<foo class="bar" id="baz"/>')
-test("foo[bar=baz]", '<foo bar="baz"/>')
-test("foo[bar='b az']", '<foo bar="b az"/>')
-test('foo[bar="b az"]', '<foo bar="b az"/>')
-test('foo[bar="b az"].cls', '<foo bar="b az" class="cls"/>')
-test('foo[bar="b az"]#xxx', '<foo bar="b az" id="xxx"/>')
-test('foo[bar="b \\"az"]', '<foo bar="b "az"/>')
-test("""
-a
-	!-- comment
-	!-- line two
-	b
-""", "<a><!-- comment--><!-- line two--><b/></a>")
-
-test("""
-a "Hello World"
-""", "<a>Hello World</a>")
-test("""
-a
-	"Hello"
-""", "<a>Hello</a>")
-
-test("""
-a
-	"Hello,
-	World"
-	b
-		c
-""", "<a>Hello,\n\tWorld<b><c/></b></a>")
-test("""
-a
-	'Hello'
-""", "<a>Hello</a>")
-test("""
-a
-	'Hello
-	World'
-""", "<a>Hello\n\tWorld</a>")
