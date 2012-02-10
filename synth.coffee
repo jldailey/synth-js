@@ -1,8 +1,9 @@
+#!/usr/bin/env coffee
 
-Function.ApplyAll = (f, c, a) ->
+applyAll = (f, c, a) ->
 	x = f?.apply c, a
 	if typeof x is "function"
-		return Function.ApplyAll x, c, a
+		return applyAll x, c, a
 	return x
 
 class StateMachine
@@ -42,68 +43,29 @@ class StateMachine
 		args = [c]
 		if not @entered
 			@entered = true
-			Function.ApplyAll modeline.enter, @, args
+			applyAll modeline.enter, @, args
 			if not @entered # we went into a new state while inside the handler
 				@runOne(c)
-		Function.ApplyAll modeline.every, @, args
+		applyAll modeline.every, @, args
 		if not @entered # we went into a new state while inside the handler
 			@runOne(c)
 		if c of modeline
-			Function.ApplyAll modeline[c], @, args
+			applyAll modeline[c], @, args
 		else
-			Function.ApplyAll modeline[""], @, args
+			applyAll modeline[""], @, args
 	eval: (input) ->
 		console.log "eval'ing '#{input}'" if @debug > 1
 		for c in input
 			@runOne(c)
 			console.log "'#{c}' is consumed." if @debug > 2
 		console.log "EOF. state: #{@state}" if @debug > 0
-		Function.ApplyAll @table[@state]?.eof, @
+		applyAll @table[@state]?.eof, @
 	getOutput: () -> @stack.join('')
 	run: (input) ->
 		@eval(input)
 		@getOutput()
 
 class Synth extends StateMachine
-	### Parse CSS-like statements and generate HTML.
-	Basic syntax starts by defining nodes as you would in CSS:
-	tag.class#id[attribute=value]
-	Then, you add python-like whitespace awareness to get the syntax for
-	a very basic HTML document:
-
-	html
-		head
-		body
-			p "Hello World"
-	
-	A more complete example
-
-	html
-		head
-			link[href=#]
-			title "Home Page"
-			!? lt IE 9
-				script[src=...]
-		body
-			header
-				span "Home Page"
-			h1 "Welcome to my home page."
-			p "This is where I write stuff."
-			ol
-				li "This is where"
-				li "i keep track of"
-				li "important stuff"
-				li "in a list."
-			!-- This is a comment
-			!-- still a comment
-			footer.container.center-block
-				"Thank you for using Synth templates."
-	
-	For now, it is strictly tab indented.
-
-	###
-
-
 	constructor: () ->
 		super()
 
@@ -377,4 +339,19 @@ synth = (text, debug = 0) ->
 
 exports?.synth = synth
 window?.synth = synth
+
+if process?.argv.length > 2
+	fs = require('fs')
+	argv = process.argv.splice(2)
+	console.log "argv: #{argv}"
+	for f in argv
+		fs.readFile f, (err, data) ->
+			throw err if err?
+			output = synth(data)
+			outputFile = "#{f}.html"
+			console.log "Writing #{output.length} bytes to #{outputFile}"
+			fs.writeFile outputFile, output, 'utf8', (err) ->
+				throw err if err?
+
+
 
