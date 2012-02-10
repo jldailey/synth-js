@@ -1,4 +1,3 @@
-
 Function.ApplyAll = (f, c, a) ->
 	x = f?.apply c, a
 	if typeof x is "function"
@@ -65,45 +64,6 @@ class StateMachine
 		@getOutput()
 
 class Synth extends StateMachine
-	### Parse CSS-like statements and generate HTML.
-	Basic syntax starts by defining nodes as you would in CSS:
-	tag.class#id[attribute=value]
-	Then, you add python-like whitespace awareness to get the syntax for
-	a very basic HTML document:
-
-	html
-		head
-		body
-			p "Hello World"
-	
-	A more complete example
-
-	html
-		head
-			link[href=#]
-			title "Home Page"
-			!? lt IE 9
-				script[src=...]
-		body
-			header
-				span "Home Page"
-			h1 "Welcome to my home page."
-			p "This is where I write stuff."
-			ol
-				li "This is where"
-				li "i keep track of"
-				li "important stuff"
-				li "in a list."
-			!-- This is a comment
-			!-- still a comment
-			footer.container.center-block
-				"Thank you for using Synth templates."
-	
-	For now, it is strictly tab indented.
-
-	###
-
-
 	constructor: () ->
 		super()
 
