@@ -1,10 +1,10 @@
 require("./common")
 synth = require("../synth").synth
 
-testPattern = (patt, expected) ->
+testPattern = (patt, expected, debug = 0) ->
 	() ->
 		try
-			output = synth(patt).toString()
+			output = synth(patt,{},debug).toString()
 		catch e
 			output = e.toString()
 		assertEqual(output, expected)
@@ -59,7 +59,7 @@ a
 a
 	!-- comment
 	b
-""", "<a><!-- comment--><b/></a>")
+""", "<a><!-- comment--><b/></a>", 0)
 	comment_sibling2: testPattern("""
 a
 	!-- comment
@@ -86,6 +86,20 @@ a
 	'Hello
 	World'
 """, "<a>Hello\n\tWorld</a>")
+	comment_conditional: testPattern("""
+a
+	!? lt IE 9
+		script[src=ie.js]
+	script[src=all.js]
+""", '<a><!--[if lt IE 9]><script src="ie.js"/><![endif]--><script src="all.js"/></a>')
+	prefix_indent1: testPattern("""
+	a
+		b
+	""", "<a><b/></a>")
+	prefix_indent2: testPattern("""
+			a
+				b
+	""", "<a><b/></a>")
 
 })
 

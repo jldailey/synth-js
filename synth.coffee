@@ -1,7 +1,7 @@
 #!/usr/bin/env coffee
 
 # NOTE to self: this could be expanded to a template language by
-# recognizing special tags: with,each,include
+# recognizing special tags: each,include
 # and special sigil: @, recognized within text and attribute values
 # 
 # Example:
@@ -20,6 +20,10 @@
 # """, {
 #  users: [ ... ]
 # })
+#
+# TODO:
+# parse @{xxx} from inside text nodes and attribute values
+# catch and handle 'each' nodes
 
 
 applyAll = (f, c, a) -> # helper to keep calling functions until they stop returning functions
@@ -98,7 +102,6 @@ class StateMachine
 		console.log "eval'ing '#{input}'" if @debug > 1
 		for c in input
 			@runOne(c)
-			console.log "'#{c}' is consumed." if @debug > 2
 		console.log "EOF. state: #{@state}" if @debug > 0
 		applyAll @table[@state]?.eof, @
 	getOutput: () -> @stack.join('')
@@ -129,6 +132,7 @@ class Synth extends StateMachine
 		READ_CONDITION = "READ_CONDITION"
 		COUNT_TABS = "COUNT_TABS"
 		START_TABS = "START_TABS"
+		INIT_TABS = "INIT_TABS"
 		READ_CLASS = "READ_CLASS"
 		FINAL = "FINAL"
 		@state = INIT
@@ -136,205 +140,211 @@ class Synth extends StateMachine
 			INIT: {
 				enter: () ->
 					@reset()
-					# really these three values should be computed based on the first line of the input
-					# right now, 0, 1, -1, assumes/allows no global offset to the indentation in the file
-					@tabs = 0
-					@dtabs = 1
-					@ptabs = -1
 					@root = @document.createDocumentFragment()
 					@cursor = @root
 					@attr = { key: null, val: undefined }
-					@jmp READ_TAG
+					@jmp INIT_TABS
 			}
 			READ_TAG: {
-				"": @push()
-				" ": @endTag(READ_TAG)
-				'"': @endTag(READ_DQ_TEXT)
-				"'": @endTag(READ_SQ_TEXT)
-				".": @endTag(READ_CLASS)
-				"#": @endTag(READ_ID)
-				"[": @endTag(READ_KEY)
-				"!": @endTag(START_COMMENT)
-				"\r": @endTag(START_TABS)
-				"\n": @endTag(START_TABS)
-				eof: @endTag(FINAL)
+				""  : @push()
+				" " : @endTag READ_TAG
+				'"' : @endTag READ_DQ_TEXT
+				"'" : @endTag READ_SQ_TEXT
+				"." : @endTag READ_CLASS
+				"#" : @endTag READ_ID
+				"[" : @endTag READ_KEY
+				"!" : @endTag START_COMMENT
+				"\r": @endTag START_TABS
+				"\n": @endTag START_TABS
+				eof : @endTag FINAL
 			}
 			START_COMMENT: {
-				"-": @jmp CONT_COMMENT
-				"?": @jmp READ_CONDITION
+				"-" : @jmp CONT_COMMENT
+				"?" : @jmp READ_CONDITION
 			}
 			CONT_COMMENT: {
-				"-": @jmp READ_COMMENT
+				"-" : @jmp READ_COMMENT
+				""  : @err("syntax: expected -")
 			}
 			READ_COMMENT: {
-				"": @push()
-				"\n": @endComment(COUNT_TABS)
-				"\r": @endComment(COUNT_TABS)
-				eof: @endComment(FINAL)
+				""  : @push()
+				"\n": @endComment START_TABS
+				"\r": @endComment START_TABS
+				eof : @endComment FINAL
 			}
 			READ_CONDITION: {
-				"": @push()
-				"\n": @endCondition(COUNT_TABS)
-				"\r": @endCondition(COUNT_TABS)
-				eof: @endCondition(FINAL)
+				""  : @push()
+				"\n": @endCondition START_TABS
+				"\r": @endCondition START_TABS
+				eof : @endCondition FINAL
 			}
 			READ_DQ_TEXT: {
-				"": @push()
-				"\\": @call(ESCAPED)
-				'"': @endText(READ_TAG)
-				eof: @err("syntax: unclosed double-quote")
+				""  : @push()
+				"\\": @call ESCAPED
+				'"' : @endText READ_TAG
+				eof : @err("syntax: unclosed double-quote")
 			}
 			READ_SQ_TEXT: {
-				"": @push()
-				"\\": @call(ESCAPED)
-				"'": @endText(READ_TAG)
-				eof: @err("syntax: unclosed single-quote")
+				""  : @push()
+				"\\": @call ESCAPED
+				"'" : @endText READ_TAG
+				eof : @err("syntax: unclosed single-quote")
 			}
 			READ_CLASS: {
-				"": @push()
-				" ": @endClass(READ_TAG)
-				".": @endClass(READ_CLASS)
-				"#": @endClass(READ_ID)
-				"[": @endClass(READ_KEY)
-				"\r": @endClass(START_TABS)
-				"\n": @endClass(START_TABS)
-				eof: @endClass(FINAL)
+				""  : @push()
+				" " : @endClass READ_TAG
+				"." : @endClass READ_CLASS
+				"#" : @endClass READ_ID
+				"[" : @endClass READ_KEY
+				"\r": @endClass START_TABS
+				"\n": @endClass START_TABS
+				eof : @endClass FINAL
 			}
 			READ_ID: {
-				"": @push()
-				" ": @endId(READ_TAG)
-				".": @endId(READ_CLASS)
-				"#": @endId(READ_ID)
-				"[": @endId(READ_KEY)
-				"\r": @endId(START_TABS)
-				"\n": @endId(START_TABS)
-				eof: @endId(FINAL)
+				""  : @push()
+				" " : @endId READ_TAG
+				"." : @endId READ_CLASS
+				"#" : @endId READ_ID
+				"[" : @endId READ_KEY
+				"\r": @endId START_TABS
+				"\n": @endId START_TABS
+				eof : @endId FINAL
 			}
 			READ_KEY: {
-				"": @push()
-				"=": @endKey(START_VALUE)
-				"]": @endKey(READ_TAG)
-				eof: @err("syntax: unclosed attribute block, expected ] or =")
+				""  : @push()
+				"=" : @endKey START_VALUE
+				"]" : @endKey READ_TAG
+				eof : @err("syntax: unclosed attribute block, expected ] or =")
 			}
 			START_VALUE: {
-				"": (c) -> @stack.push(c); @jmp(READ_UQ_VAL)
-				'"': @jmp(READ_DQ_VAL)
-				"'": @jmp(READ_SQ_VAL)
-				"]": @endVal(READ_TAG)
-				eof: @err("syntax: unclosed attribute block, expected ] or value")
+				""  : (c) -> @stack.push(c); @jmp(READ_UQ_VAL)
+				'"' : @jmp READ_DQ_VAL
+				"'" : @jmp READ_SQ_VAL
+				"]" : @endVal READ_TAG
+				eof : @err("syntax: unclosed attribute block, expected ] or value")
 			}
 			READ_UQ_VAL: {
-				"": @push()
-				"]": @endVal(READ_TAG)
-				eof: @err("syntax: unclosed unquoted attribute value")
+				""  : @push()
+				"]" : @endVal READ_TAG
+				eof : @err "syntax: unclosed unquoted attribute value"
 			}
 			READ_DQ_VAL: {
-				"": @push()
-				"\\": @call(ESCAPED)
-				'"': @endVal(END_ATTR)
-				eof: @err("syntax: unclosed double-quoted attribute value")
+				""  : @push()
+				"\\": @call ESCAPED
+				'"' : @endVal END_ATTR
+				eof : @err "syntax: unclosed double-quoted attribute value"
 			}
 			READ_SQ_VAL: {
-				"": @push()
-				"\\": @call(ESCAPED)
-				"'": @endVal(END_ATTR)
-				eof: @err("syntax: unclosed single-quoted attribute value")
+				""  : @push()
+				"\\": @call ESCAPED
+				"'" : @endVal END_ATTR
+				eof : @err "syntax: unclosed single-quoted attribute value"
 			}
 			ESCAPED: {
-				"n": @called () -> @stack.push("\n")
-				"r": @called () -> @stack.push("\r")
-				"t": @called () -> @stack.push("\t")
-				"": @called (c) -> @stack.push(c)
-				eof: @err("syntax: unterminated string ended on an escape char '\\'")
+				"n" : @called () -> @stack.push("\n")
+				"r" : @called () -> @stack.push("\r")
+				"t" : @called () -> @stack.push("\t")
+				""  : @called (c) -> @stack.push(c)
+				eof : @err "syntax: unterminated string ended on an escape char '\\'"
 			}
 			END_ATTR: {
-				"]": @endAttr(READ_TAG)
-				"": @err('syntax: expected closing ]')
-				eof: @err('syntax: expected closing ]')
+				"]" : @endAttr READ_TAG
+				""  : @err 'syntax: expected closing ]'
+				eof : @err 'syntax: expected closing ]'
+			}
+			INIT_TABS: {
+				enter: ()->
+					@tabs =
+						prev: -1
+						curr: 0
+						delt: 1
+				"\t": ()-> @tabs.prev += 1
+				""  : @jmp READ_TAG
 			}
 			START_TABS: {
-				enter: () ->
-					@tabs = 1
-					@jmp(COUNT_TABS)
+				enter: ()->
+					@tabs.curr = 0
+					@jmp COUNT_TABS
 			}
 			COUNT_TABS: {
-				"\r": () -> @tabs = 1
-				"\n": () -> @tabs = 1
-				"\t": () -> @tabs += 1
-				'"': @jmp READ_DQ_TEXT
-				"'": @jmp READ_SQ_TEXT
-				"!": (c) ->
-					@ptabs += (@dtabs = @tabs - @ptabs)
-					@jmp START_COMMENT
-				"": (c) ->
-					@ptabs += (@dtabs = @tabs - @ptabs)
+				"\r": @jmp START_TABS
+				"\n": @jmp START_TABS
+				"\t": () -> @tabs.curr += 1
+				'"' : @endTabs READ_DQ_TEXT
+				"'" : @endTabs READ_SQ_TEXT
+				"!" : @endTabs START_COMMENT
+				""  : (c) ->
 					@stack.push c
-					@jmp READ_TAG
-				eof: @endTag(FINAL)
+					@endTabs READ_TAG
+				eof : @endTag FINAL
 			}
 			FINAL: {
 				enter: () ->
 					console.log "FINAL" if @debug > 0
 			}
 		}
-	endTag: operator (tagName, 'endTag') ->
+	appendChild: (child) ->
+		if @cursor?
+			if @tabs.delt isnt 1
+				# close (-tabs.delt + 1) nodes
+				n = (-@tabs.delt) + 1
+				console.log "closing #{n} times" if @debug > 1
+				while n-- > 0
+					@cursor = @cursor.parentNode
+			console.log "appending child" if @debug > 2
+			@cursor.appendChild child
+		else
+			console.log "no cursor?" if @debug > 0
+		@cursor = child
+
+	endTag: operator (tagName) ->
 		if tagName?.length > 0
-			node = @document.createElement(tagName)
-			if @cursor?
-				if @dtabs isnt 1
-					# close (-dtabs + 1) nodes
-					n = (-@dtabs) + 1
-					console.log "closing #{n} times" if @debug > 1
-					while n-- > 0
-						@cursor = @cursor.parentNode
-				console.log "appending child" if @debug > 2
-				@cursor.appendChild node
-			else
-				console.log "no cursor?" if @debug > 0
-			@cursor = node
-	endComment: operator (commentBody, 'endComment') ->
+			@appendChild @document.createElement(tagName)
+	, 'endTag'
+	endComment: operator (commentBody) ->
 		if commentBody?.length > 0
-			node = @document.createComment(commentBody)
-			@cursor?.appendChild node
+			@appendChild @document.createComment(commentBody)
+	, 'endComment'
 	endCondition: operator (condition) ->
 		if condition?.length > 0
-			node = @document.createComment("[if " + condition + "]>" + body + "<![endif]")
-			# create an un-attached div
-			div = @document.createElement("div")
-			# dont attach it exactly, but leave enough of a trail
-			# that we can get back into the real tree
-			# after we descend into the body
-			p = @cursor
-			div.__defineGetter__ 'parentNode', () -> p
-			@cursor = div
-			
-	endClass: operator (className, 'endClass') ->
+			@appendChild @document.createCComment("if " + condition)
+	, 'endCondition'
+	endClass: operator (className) ->
 		if @cursor? and className?.length > 0
 			if @cursor.className.length > 0
 				@cursor.className += " " + className
 			else
 				@cursor.className += className
-	endId: operator (id, 'endId') ->
+	, 'endClass'
+	endId: operator (id) ->
 		if @cursor? and id?.length > 0
 			@cursor.id = id
-	endKey: operator (key, 'endKey') ->
+	, 'endId'
+	endKey: operator (key) ->
 		if key?.length > 0
 			@attr.key = key
-	endVal: operator (val, 'endVal') ->
+	, 'endKey'
+	endVal: operator (val) ->
 		@attr.val = val
 		@endAttr()()
-	endAttr: operator (_, 'endAttr') ->
+	, 'endVal'
+	endAttr: operator () ->
 		if @cursor? and @attr.key?.length > 0
 			@cursor.setAttribute(@attr.key, @attr.val)
 			@attr = { key: null, val: undefined }
-	endText: operator (text, 'endText') ->
-		node = @document.createTextNode(text)
-		@cursor?.appendChild node
+	, 'endAttr'
+	endTabs: operator () ->
+		@tabs.prev += (@tabs.delt = @tabs.curr - @tabs.prev)
+	, 'endTabs'
+	endText: operator (text) ->
+		@appendChild @document.createTextNode(text)
+	, 'endText'
 	getOutput: () ->
 		return @root
 
-synth = (text, context = {}) ->
+synth = (text, context = {}, debug = 0) ->
 	m = new Synth(context)
+	m.debug = debug
 	return m.run(text)
 
 exports?.synth = synth
