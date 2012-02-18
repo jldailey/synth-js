@@ -368,7 +368,6 @@ synth = (text, context = {}, debug = 0) ->
 exports?.synth = synth
 window?.synth = synth
 
-###
 if process?.argv.length > 2
 	fs = require('fs')
 	argv = process.argv.splice(2)
@@ -381,5 +380,3 @@ if process?.argv.length > 2
 			console.log "Writing #{output.length} bytes to #{outputFile}"
 			fs.writeFile outputFile, output, 'utf8', (err) ->
 				throw err if err?
-
-###
