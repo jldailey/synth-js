@@ -1,31 +1,5 @@
 #!/usr/bin/env coffee
 
-# NOTE to self: this could be expanded to a template language by
-# recognizing special tags: each,include
-# and special sigil: @, recognized within text and attribute values
-# 
-# Example:
-# synth("""
-# with[user=@users[0]]
-#  p span "Name: @user.name"
-#  p span "Email: @user.email"
-# """, {
-#  users: [ { name: "Joe", email: "joe@mama.com" } ]
-# })
-#
-# synth("""
-# each[of=@users][as=user]
-#  p span "Name: @user.name"
-#  p span "Email: @user.email"
-# """, {
-#  users: [ ... ]
-# })
-#
-# TODO:
-# parse @{xxx} from inside text nodes and attribute values
-# catch and handle 'each' nodes
-
-
 applyAll = (f, c, a) -> # helper to keep calling functions until they stop returning functions
 	x = f?.apply c, a
 	if typeof x is "function"
@@ -67,9 +41,9 @@ class StateMachine
 			console.log "jmp'ing to #{state}" if @debug > 1
 			@entered = (@state is state)
 			@state = state
-	call: (state) ->
+	call: (state, next) ->
 		() =>
-			@stack.push @state
+			@stack.push (next or @state)
 			@jmp state
 	called: (f) ->
 		(a...) =>
@@ -101,6 +75,8 @@ class StateMachine
 	eval: (input) ->
 		console.log "eval'ing '#{input}'" if @debug > 1
 		for c in input
+			if @debug > 0
+				console.log "stack: #{@stack.join ''}"
 			@runOne(c)
 		console.log "EOF. state: #{@state}" if @debug > 0
 		applyAll @table[@state]?.eof, @
@@ -110,7 +86,7 @@ class StateMachine
 		@getOutput()
 
 class Synth extends StateMachine
-	constructor: (context) ->
+	constructor: (context = {}) ->
 		super()
 		# state names
 		INIT = "INIT"
@@ -118,12 +94,15 @@ class Synth extends StateMachine
 		READ_CLASS = "READ_CLASS"
 		READ_ID = "READ_ID"
 		READ_KEY = "READ_KEY"
-		START_VALUE = "START_VALUE"
+		START_VAL = "START_VAL"
+		START_VAR = "START_VAR"
+		READ_VAR = "READ_VAR"
 		READ_UQ_VAL = "READ_UQ_VAL"
 		READ_DQ_VAL = "READ_DQ_VAL"
 		READ_SQ_VAL = "READ_SQ_VAL"
 		ESCAPED = "ESCAPED"
 		END_ATTR = "END_ATTR"
+		END_VAL = "END_VAL"
 		READ_SQ_TEXT = "READ_SQ_TEXT"
 		READ_DQ_TEXT = "READ_DQ_TEXT"
 		START_COMMENT = "START_COMMENT"
@@ -143,6 +122,7 @@ class Synth extends StateMachine
 					@root = @document.createDocumentFragment()
 					@cursor = @root
 					@attr = { key: null, val: undefined }
+					@contextStack = [context]
 					@jmp INIT_TABS
 			}
 			READ_TAG: {
@@ -181,14 +161,27 @@ class Synth extends StateMachine
 			READ_DQ_TEXT: {
 				""  : @push()
 				"\\": @call ESCAPED
+				"@": @call START_VAR
 				'"' : @endText READ_TAG
 				eof : @err("syntax: unclosed double-quote")
 			}
 			READ_SQ_TEXT: {
 				""  : @push()
 				"\\": @call ESCAPED
+				"@": @call START_VAR
 				"'" : @endText READ_TAG
 				eof : @err("syntax: unclosed single-quote")
+			}
+			START_VAR: {
+				enter: () ->
+					@sp = @stack.length
+				"{": @jmp READ_VAR
+				# TODO handle back-tracking to un-consume the @
+			}
+			READ_VAR: {
+				"": @push()
+				"}": @endVar()
+				eof: @err "syntax: unexpected EOF in @{} variable"
 			}
 			READ_CLASS: {
 				""  : @push()
@@ -212,12 +205,13 @@ class Synth extends StateMachine
 			}
 			READ_KEY: {
 				""  : @push()
-				"=" : @endKey START_VALUE
+				"=" : @endKey START_VAL
 				"]" : @endKey READ_TAG
 				eof : @err("syntax: unclosed attribute block, expected ] or =")
 			}
-			START_VALUE: {
+			START_VAL: {
 				""  : (c) -> @stack.push(c); @jmp(READ_UQ_VAL)
+				"@" : @call START_VAR, READ_UQ_VAL
 				'"' : @jmp READ_DQ_VAL
 				"'" : @jmp READ_SQ_VAL
 				"]" : @endVal READ_TAG
@@ -246,6 +240,9 @@ class Synth extends StateMachine
 				"t" : @called () -> @stack.push("\t")
 				""  : @called (c) -> @stack.push(c)
 				eof : @err "syntax: unterminated string ended on an escape char '\\'"
+			}
+			END_VAL: {
+				enter: @endVal END_ATTR
 			}
 			END_ATTR: {
 				"]" : @endAttr READ_TAG
@@ -283,6 +280,15 @@ class Synth extends StateMachine
 					console.log "FINAL" if @debug > 0
 			}
 		}
+	getVar: (name) ->
+		for i in [@contextStack.length-1..0]
+			console.log "checking context: #{Object.keys(@contextStack[i])}" if @debug > 0
+			v = get(@contextStack[i], name)
+			if v?
+				console.log "value: #{v}" if @debug > 0
+				return v
+	setVar: (name, value) ->
+		@contextStack[@contextStack.length - 1][name] = value
 	appendChild: (child) ->
 		if @cursor?
 			if @tabs.delt isnt 1
@@ -307,7 +313,9 @@ class Synth extends StateMachine
 	, 'endComment'
 	endCondition: operator (condition) ->
 		if condition?.length > 0
-			@appendChild @document.createCComment("if " + condition)
+			condition = condition.replace(/^if /, "").replace(/^ +/, "")
+			condition = "if " + condition
+			@appendChild @document.createCComment(condition)
 	, 'endCondition'
 	endClass: operator (className) ->
 		if @cursor? and className?.length > 0
@@ -339,6 +347,16 @@ class Synth extends StateMachine
 	endText: operator (text) ->
 		@appendChild @document.createTextNode(text)
 	, 'endText'
+	endVar: () ->
+		() =>
+			name = (@stack.slice @sp, @stack.length).join ''
+			console.log "variable name: #{name}" if @debug > 0
+			@stack = @stack.slice 0, @sp
+			next = @stack.pop()
+			console.log "next: #{next}" if @debug > 0
+			@stack.push @getVar(name)
+			@jmp next
+	, 'endVar'
 	getOutput: () ->
 		return @root
 
@@ -350,6 +368,7 @@ synth = (text, context = {}, debug = 0) ->
 exports?.synth = synth
 window?.synth = synth
 
+###
 if process?.argv.length > 2
 	fs = require('fs')
 	argv = process.argv.splice(2)
@@ -363,3 +382,4 @@ if process?.argv.length > 2
 			fs.writeFile outputFile, output, 'utf8', (err) ->
 				throw err if err?
 
+###
