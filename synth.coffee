@@ -127,7 +127,9 @@ class Synth extends StateMachine
 			}
 			READ_TAG: {
 				""  : @push()
-				" " : @endTag READ_TAG
+				" " : () ->
+					@tabs?.prev += 1
+					@endTag READ_TAG
 				'"' : @endTag READ_DQ_TEXT
 				"'" : @endTag READ_SQ_TEXT
 				"." : @endTag READ_CLASS
@@ -163,7 +165,7 @@ class Synth extends StateMachine
 				"\\": @call ESCAPED
 				"@": @call START_VAR
 				'"' : @endText READ_TAG
-				eof : @err("syntax: unclosed double-quote")
+				eof : @err "syntax: unclosed double-quote, stack: [#{@stack.join ''}]"
 			}
 			READ_SQ_TEXT: {
 				""  : @push()
@@ -264,8 +266,8 @@ class Synth extends StateMachine
 					@jmp COUNT_TABS
 			}
 			COUNT_TABS: {
-				"\r": @jmp START_TABS
-				"\n": @jmp START_TABS
+				"\r": () -> @tabs.curr = 0
+				"\n": () -> @tabs.curr = 0
 				"\t": () -> @tabs.curr += 1
 				'"' : @endTabs READ_DQ_TEXT
 				"'" : @endTabs READ_SQ_TEXT
@@ -302,7 +304,6 @@ class Synth extends StateMachine
 		else
 			console.log "no cursor?" if @debug > 0
 		@cursor = child
-
 	endTag: operator (tagName) ->
 		if tagName?.length > 0
 			@appendChild @document.createElement(tagName)
@@ -363,20 +364,23 @@ class Synth extends StateMachine
 synth = (text, context = {}, debug = 0) ->
 	m = new Synth(context)
 	m.debug = debug
-	return m.run(text)
+	return m.run(text).toString(true)
 
 exports?.synth = synth
 window?.synth = synth
 
 if process?.argv.length > 2
 	fs = require('fs')
-	argv = process.argv.splice(2)
-	console.log "argv: #{argv}"
-	for f in argv
-		fs.readFile f, (err, data) ->
+	rethrow = (f) ->
+		(err, data) ->
 			throw err if err?
-			output = synth(data)
+			f.call @, data
+	argv = process.argv.splice(2)
+	for f in argv
+		fs.readFile f, rethrow (data) ->
+			console.log synth(data.toString(),{},0).toString()
+			###
 			outputFile = "#{f}.html"
 			console.log "Writing #{output.length} bytes to #{outputFile}"
-			fs.writeFile outputFile, output, 'utf8', (err) ->
-				throw err if err?
+			fs.writeFile outputFile, output, 'utf8', rethrow () ->
+			###
